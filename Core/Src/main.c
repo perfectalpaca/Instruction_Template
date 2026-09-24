@@ -31,6 +31,8 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define COMMAND_SIZE 50
+
 
 /* USER CODE END PD */
 
@@ -101,12 +103,12 @@ int main(void)
   /* USER CODE BEGIN 2 */
   uint8_t msg[] = "Hello from STM32!\r\n";
   uint8_t rxMsg;
-  char command[50];
-  char receivedCommand[50];
+  char command[COMMAND_SIZE];
+  char receivedCommand[COMMAND_SIZE];
   uint8_t commandIndex = 0;
   uint8_t clear[] = "\033[2J\033[H";
   uint8_t verificationMsg[] = "Command Received. Command is:\r\n";
-
+  uint8_t overflowMsg[] = "Overflow reached, resetting string\r\n";
 
   /* USER CODE END 2 */
 
@@ -157,6 +159,10 @@ int main(void)
 
 	  // So far, this function blocks the program until a character is received. For now, treat this as a blocking statement and work on interrupts in a future experiment
 	  HAL_UART_Receive(&hcom_uart[COM1], &rxMsg, 1, HAL_MAX_DELAY);
+
+
+	  // Clear the terminal for visibility
+	  HAL_UART_Transmit(&hcom_uart[COM1], clear, sizeof(clear) - 1, HAL_MAX_DELAY);
 	  if(rxMsg == '/'){
 		  commandIndex = 0;
 		  command[0] = '\0';
@@ -164,18 +170,33 @@ int main(void)
 	  // Submit the command to receiveCommand, then clear command for a new word
 	  else if(rxMsg == '?'){
 		  strcpy(receivedCommand, command);
-		  commandIndex++;
 		  command[0] = '\0';
 	  }
 	  else{
-		  command[commandIndex] = rxMsg;
-		  commandIndex++;
-		  command[commandIndex] = '\0';
+
+
+		  if(commandIndex < COMMAND_SIZE - 1){
+			  command[commandIndex] = rxMsg;
+			  commandIndex++;
+			  command[commandIndex] = '\0';
+		  }
+		  else{
+		        HAL_UART_Transmit(
+		            &hcom_uart[COM1],
+		            overflowMsg,
+		            sizeof(overflowMsg) - 1,
+		            HAL_MAX_DELAY
+		        );
+
+		        commandIndex = 0;
+		        command[0] = '\0';
+		  }
 	  }
 
 
-	  // Clear the terminal for visibility
-	  HAL_UART_Transmit(&hcom_uart[COM1], clear, sizeof(clear) - 1, HAL_MAX_DELAY);
+
+
+
 
 	  // Print the command
 	  if(rxMsg == '?'){
@@ -185,9 +206,15 @@ int main(void)
 
 		  commandIndex = 0;
 	  }
+	  // If the string is above a limit, set the index to 0 to prevent overflow and accessing undefined indices
+
+
 	  else{
 		  HAL_UART_Transmit(&hcom_uart[COM1], (uint8_t *)command, commandIndex, HAL_MAX_DELAY);
 	  }
+
+
+
 
 
 
