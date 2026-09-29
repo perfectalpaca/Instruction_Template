@@ -18,7 +18,7 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-
+#include "command_parser.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
@@ -46,14 +46,7 @@
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-uint8_t msg[] = "Hello from STM32!\r\n";
 uint8_t rxMsg;
-char command[COMMAND_SIZE];
-char receivedCommand[COMMAND_SIZE];
-uint8_t commandIndex = 0;
-uint8_t clear[] = "\033[2J\033[H";
-uint8_t verificationMsg[] = "Command Received. Command is:\r\n";
-uint8_t overflowMsg[] = "Overflow reached, resetting string\r\n";
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -138,59 +131,13 @@ int main(void)
 }
 
 
-//Functions similarly to the previous byte processor, taking / and ? as special characters to clear and submit a command, respectively
-void Process_Byte(void){
-	  if(rxMsg == '/'){
-		  commandIndex = 0;
-		  command[0] = '\0';
-	  }
-	  // Submit the command to receiveCommand, then clear command for a new word
-	  else if(rxMsg == '?'){
-		  strcpy(receivedCommand, command);
-		  command[0] = '\0';
-	  }
-	  else{
 
-
-		  if(commandIndex < COMMAND_SIZE - 1){
-			  command[commandIndex] = rxMsg;
-			  commandIndex++;
-			  command[commandIndex] = '\0';
-		  }
-		  else{
-		        HAL_UART_Transmit(
-		            &huart1,
-		            overflowMsg,
-		            sizeof(overflowMsg) - 1,
-		            HAL_MAX_DELAY
-		        );
-
-		        commandIndex = 0;
-		        command[0] = '\0';
-		  }
-	  }
-	  // Print the command
-	  if(rxMsg == '?'){
-
-		  HAL_UART_Transmit(&huart1, verificationMsg, sizeof(verificationMsg) - 1, HAL_MAX_DELAY);
-		  HAL_UART_Transmit(&huart1, (uint8_t *)receivedCommand, commandIndex, HAL_MAX_DELAY);
-
-		  commandIndex = 0;
-	  }
-	  // If the string is above a limit, set the index to 0 to prevent overflow and accessing undefined indices
-
-
-	  else{
-		  HAL_UART_Transmit(&huart1, (uint8_t *)command, commandIndex, HAL_MAX_DELAY);
-	  }
-
-}
 
 // Callback function waits for new data before processing the byte into the command string.
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-	  HAL_UART_Transmit(&huart1, clear, sizeof(clear) - 1, HAL_MAX_DELAY);
+	  Clear_Terminal();
 	  HAL_UART_Receive_IT(&huart1, &rxMsg, 1);
-	  Process_Byte();
+	  Process_Byte(rxMsg);
 //	  HAL_UART_Transmit(&huart1, &rxMsg, 1, HAL_MAX_DELAY);
 
 }

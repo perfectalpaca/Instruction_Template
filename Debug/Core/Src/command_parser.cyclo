@@ -1,0 +1,2 @@
+../Core/Src/command_parser.c:18:6:Clear_Terminal	1
+../Core/Src/command_parser.c:25:6:Process_Byte	5
