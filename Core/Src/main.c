@@ -43,12 +43,17 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-COM_InitTypeDef BspCOMInit;
-
-UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-
+uint8_t msg[] = "Hello from STM32!\r\n";
+uint8_t rxMsg;
+char command[COMMAND_SIZE];
+char receivedCommand[COMMAND_SIZE];
+uint8_t commandIndex = 0;
+uint8_t clear[] = "\033[2J\033[H";
+uint8_t verificationMsg[] = "Command Received. Command is:\r\n";
+uint8_t overflowMsg[] = "Overflow reached, resetting string\r\n";
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -56,7 +61,7 @@ void SystemClock_Config(void);
 static void SystemPower_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_ICACHE_Init(void);
-static void MX_USART2_UART_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -99,16 +104,12 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_ICACHE_Init();
-  MX_USART2_UART_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  uint8_t msg[] = "Hello from STM32!\r\n";
-  uint8_t rxMsg;
-  char command[COMMAND_SIZE];
-  char receivedCommand[COMMAND_SIZE];
-  uint8_t commandIndex = 0;
-  uint8_t clear[] = "\033[2J\033[H";
-  uint8_t verificationMsg[] = "Command Received. Command is:\r\n";
-  uint8_t overflowMsg[] = "Overflow reached, resetting string\r\n";
+
+  HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(USART1_IRQn);
+  HAL_UART_Receive_IT(&huart1, &rxMsg, 1);
 
   /* USER CODE END 2 */
 
@@ -119,17 +120,6 @@ int main(void)
 
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
   BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
-
-  /* Initialize COM1 port (115200, 8 bits (7-bit data + 1 stop bit), no parity */
-  BspCOMInit.BaudRate   = 115200;
-  BspCOMInit.WordLength = COM_WORDLENGTH_8B;
-  BspCOMInit.StopBits   = COM_STOPBITS_1;
-  BspCOMInit.Parity     = COM_PARITY_NONE;
-  BspCOMInit.HwFlowCtl  = COM_HWCONTROL_NONE;
-  if (BSP_COM_Init(COM1, &BspCOMInit) != BSP_ERROR_NONE)
-  {
-    Error_Handler();
-  }
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -142,27 +132,14 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
 
-	  //Test #1, transmit msg every second
-//	  HAL_UART_Transmit(&hcom_uart[COM1], msg, sizeof(msg) - 1, HAL_MAX_DELAY);
-//
-//	    HAL_Delay(1000);
+
+  }
+  /* USER CODE END 3 */
+}
 
 
-
-	  // Test #2, Receive a letter and transmit it
-
-//	  HAL_UART_Receive(&hcom_uart[COM1], &rxMsg, 1, HAL_MAX_DELAY);
-//	  HAL_UART_Transmit(&hcom_uart[COM1], &rxMsg, 1, HAL_MAX_DELAY);
-
-
-	  // Test #3, Receive one character at a time, and append it to a string, then erase the string after receiving a forward slash
-
-	  // So far, this function blocks the program until a character is received. For now, treat this as a blocking statement and work on interrupts in a future experiment
-	  HAL_UART_Receive(&hcom_uart[COM1], &rxMsg, 1, HAL_MAX_DELAY);
-
-
-	  // Clear the terminal for visibility
-	  HAL_UART_Transmit(&hcom_uart[COM1], clear, sizeof(clear) - 1, HAL_MAX_DELAY);
+//Functions similarly to the previous byte processor, taking / and ? as special characters to clear and submit a command, respectively
+void Process_Byte(void){
 	  if(rxMsg == '/'){
 		  commandIndex = 0;
 		  command[0] = '\0';
@@ -182,7 +159,7 @@ int main(void)
 		  }
 		  else{
 		        HAL_UART_Transmit(
-		            &hcom_uart[COM1],
+		            &huart1,
 		            overflowMsg,
 		            sizeof(overflowMsg) - 1,
 		            HAL_MAX_DELAY
@@ -192,17 +169,11 @@ int main(void)
 		        command[0] = '\0';
 		  }
 	  }
-
-
-
-
-
-
 	  // Print the command
 	  if(rxMsg == '?'){
 
-		  HAL_UART_Transmit(&hcom_uart[COM1], verificationMsg, sizeof(verificationMsg) - 1, HAL_MAX_DELAY);
-		  HAL_UART_Transmit(&hcom_uart[COM1], (uint8_t *)receivedCommand, commandIndex, HAL_MAX_DELAY);
+		  HAL_UART_Transmit(&huart1, verificationMsg, sizeof(verificationMsg) - 1, HAL_MAX_DELAY);
+		  HAL_UART_Transmit(&huart1, (uint8_t *)receivedCommand, commandIndex, HAL_MAX_DELAY);
 
 		  commandIndex = 0;
 	  }
@@ -210,16 +181,18 @@ int main(void)
 
 
 	  else{
-		  HAL_UART_Transmit(&hcom_uart[COM1], (uint8_t *)command, commandIndex, HAL_MAX_DELAY);
+		  HAL_UART_Transmit(&huart1, (uint8_t *)command, commandIndex, HAL_MAX_DELAY);
 	  }
 
+}
 
+// Callback function waits for new data before processing the byte into the command string.
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+	  HAL_UART_Transmit(&huart1, clear, sizeof(clear) - 1, HAL_MAX_DELAY);
+	  HAL_UART_Receive_IT(&huart1, &rxMsg, 1);
+	  Process_Byte();
+//	  HAL_UART_Transmit(&huart1, &rxMsg, 1, HAL_MAX_DELAY);
 
-
-
-
-  }
-  /* USER CODE END 3 */
 }
 
 /**
@@ -323,50 +296,50 @@ static void MX_ICACHE_Init(void)
 }
 
 /**
-  * @brief USART2 Initialization Function
+  * @brief USART1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_USART2_UART_Init(void)
+static void MX_USART1_UART_Init(void)
 {
 
-  /* USER CODE BEGIN USART2_Init 0 */
+  /* USER CODE BEGIN USART1_Init 0 */
 
-  /* USER CODE END USART2_Init 0 */
+  /* USER CODE END USART1_Init 0 */
 
-  /* USER CODE BEGIN USART2_Init 1 */
+  /* USER CODE BEGIN USART1_Init 1 */
 
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
-  huart2.Init.ClockPrescaler = UART_PRESCALER_DIV1;
-  huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
   {
     Error_Handler();
   }
-  if (HAL_UARTEx_SetTxFifoThreshold(&huart2, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
   {
     Error_Handler();
   }
-  if (HAL_UARTEx_SetRxFifoThreshold(&huart2, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
   {
     Error_Handler();
   }
-  if (HAL_UARTEx_DisableFifoMode(&huart2) != HAL_OK)
+  if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN USART2_Init 2 */
+  /* USER CODE BEGIN USART1_Init 2 */
 
-  /* USER CODE END USART2_Init 2 */
+  /* USER CODE END USART1_Init 2 */
 
 }
 
@@ -377,6 +350,7 @@ static void MX_USART2_UART_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
 
   /* USER CODE END MX_GPIO_Init_1 */
@@ -385,6 +359,14 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pins : PA2 PA3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Alternate = GPIO_AF7_USART2;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
 
